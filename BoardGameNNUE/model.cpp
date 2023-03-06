@@ -110,7 +110,7 @@ float Evaluator::eval(const int* board)
     simde_mm256_storeu_ps(layer0 + batch * 16, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 0))));
     simde_mm256_storeu_ps(layer0 + batch * 16 + 8, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 1))));
   }
-  for (int i = 0; i < featureNum; i++)std::cout << layer0[i] << " ";
+  //for (int i = 0; i < featureNum; i++)std::cout << layer0[i] << " ";
 
 
   // linear 1
@@ -148,7 +148,7 @@ float Evaluator::eval(const int* board)
   }
   float value[8];
   simde_mm256_storeu_ps(value, v);
-  std::cout << "\n" << value[0] << " " << value[1] << " " << value[2] << "\n";
+  //std::cout << "\n" << value[0] << " " << value[1] << " " << value[2] << "\n";
   return value[0]-value[1];
 }
 
