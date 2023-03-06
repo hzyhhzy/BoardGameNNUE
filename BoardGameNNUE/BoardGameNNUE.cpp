@@ -4,7 +4,7 @@
 #include <iostream>
 #include <chrono>
 #include <random>
-#include "Eva_vo3.h"
+#include "model.h"
 using namespace std;
 
 
@@ -16,10 +16,10 @@ inline int64_t now_ms()
 
 void benchmark()
 {
-  NNUE_VO3::ModelWeight* model = new NNUE_VO3::ModelWeight("vo3_3.txt");
-  NNUE_VO3::Evaluator eva(model);
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo8_2_100k.txt");
+  NNUE::Evaluator eva(model);
 
-  int64_t testnum = 5000000;
+  int64_t testnum = 20000000;
 
   std::mt19937_64 prng{ uint64_t(now_ms()) };
   prng();
@@ -69,10 +69,12 @@ void testeval()
     ".xo..o."
     "x.....o"
     ;
-    
 
-  NNUE_VO3::ModelWeight* model = new NNUE_VO3::ModelWeight("vo3_3.txt");
-  NNUE_VO3::Evaluator eva(model);
+  //string boardstr = "oxxx.x.oooxoo.xxxxxoooxoo.xo.ooox..xx.oxxo.oxoox.";
+  //string boardstr = ".................................................";
+
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo8_2_100k.txt");
+  NNUE::Evaluator eva(model);
 
 
   int board[49];

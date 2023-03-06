@@ -1,4 +1,4 @@
-#include "Eva_vo3.h"
+#include "model.h"
 
 #include <cmath>
 #include "external/simde_avx2.h"
@@ -8,30 +8,101 @@
 #include <fstream>
 #include <string>
 #include <filesystem>
-using namespace NNUE_VO3;
+using namespace NNUE;
 
 float Evaluator::eval(const int* board)
 {
-  simde__m256i sum[featureBatch];
-  for (int batch = 0; batch < featureBatch; batch++)
+  simde__m256i sum[featureBatchInt16];
+  for (int batch = 0; batch < featureBatchInt16; batch++)
     sum[batch] = simde_mm256_setzero_si256();
+
+  static const int featureGroupIds[25] = {
+    0,1,2,1,0,
+    1,3,4,3,1,
+    2,4,5,4,2,
+    1,3,4,3,1,
+    0,1,2,1,0 };
+  static const int featureSymIds[25] =
+  { 3,7,5,5,1,
+    3,3,5,1,1,
+    2,2,0,0,0,
+    2,2,4,0,0,
+    2,6,4,4,0
+  };
+  static const int featureSymKernels[8][9] =
+  {
+    {
+         1,    3,    9,
+        27,   81,  243,
+       729, 2187, 6561,
+    },
+    {
+       729, 2187, 6561,
+        27,   81,  243,
+         1,    3,    9,
+    },
+    {
+         9,    3,    1,
+       243,   81,   27,
+      6561, 2187,  729,
+    },
+    {
+      6561, 2187,  729,
+       243,   81,   27,
+         9,    3,    1,
+    },
+    {
+         1,   27,  729,
+         3,   81, 2187,
+         9,  243, 6561,
+    },
+    {
+         9,  243, 6561,
+         3,   81, 2187,
+         1,   27,  729,
+    },
+    {
+       729,   27,    1,
+      2187,   81,    3,
+      6561,  243,    9,
+    },
+    {
+      6561,  243,    9,
+      2187,   81,    3,
+       729,   27,    1,
+    },
+  };
 
   for (int y = 0; y < 5; y++)
     for (int x = 0; x < 5; x++)
     {
       int loc = y * 7 + x;
-      int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
       int feature_loc = y * 5 + x;
-      for (int batch = 0; batch < featureBatch; batch++)
+      int sym = featureSymIds[feature_loc];
+      int feature_group = featureGroupIds[feature_loc];
+      int feature_id = 
+        featureSymKernels[sym][0] * board[loc + 0] + 
+        featureSymKernels[sym][1] * board[loc + 1] + 
+        featureSymKernels[sym][2] * board[loc + 2] + 
+        featureSymKernels[sym][3] * board[loc + 7] +
+        featureSymKernels[sym][4] * board[loc + 8] +
+        featureSymKernels[sym][5] * board[loc + 9] +
+        featureSymKernels[sym][6] * board[loc + 14] +
+        featureSymKernels[sym][7] * board[loc + 15] +
+        featureSymKernels[sym][8] * board[loc + 16];
+
+
+      for (int batch = 0; batch < featureBatchInt8; batch++)
       {
-        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
-        sum[batch] = simde_mm256_add_epi16(sum[batch], f);
+        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_group][feature_id] + batch * 32));
+        sum[2 * batch] = simde_mm256_add_epi16(sum[2 * batch], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 0)));
+        sum[2 * batch + 1] = simde_mm256_add_epi16(sum[2 * batch + 1], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 1)));
       }
     }
 
 
   float layer0[featureNum];
-  for (int batch = 0; batch < featureBatch; batch++)
+  for (int batch = 0; batch < featureBatchInt16; batch++)
   {
     auto prelu1_w = simde_mm256_loadu_si256((const simde__m256i*)(weights->prelu1_w + batch * 16));
     auto x = sum[batch];
@@ -39,11 +110,12 @@ float Evaluator::eval(const int* board)
     simde_mm256_storeu_ps(layer0 + batch * 16, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 0))));
     simde_mm256_storeu_ps(layer0 + batch * 16 + 8, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 1))));
   }
+  for (int i = 0; i < featureNum; i++)std::cout << layer0[i] << " ";
 
 
   // linear 1
   float layer1[mlpChannel];
-  for (int i = 0; i < mlpBatch32; i++) {
+  for (int i = 0; i < mlpBatchFloat; i++) {
     auto sum = simde_mm256_loadu_ps(weights->mlp_b1 + i * 8);
     for (int j = 0; j < featureNum; j++) {
       auto x = simde_mm256_set1_ps(layer0[j]);
@@ -56,7 +128,7 @@ float Evaluator::eval(const int* board)
 
   // linear 2
   float layer2[mlpChannel];
-  for (int i = 0; i < mlpBatch32; i++) {
+  for (int i = 0; i < mlpBatchFloat; i++) {
     auto sum = simde_mm256_loadu_ps(weights->mlp_b2 + i * 8);
     for (int j = 0; j < mlpChannel; j++) {
       auto x = simde_mm256_set1_ps(layer1[j]);
@@ -76,7 +148,7 @@ float Evaluator::eval(const int* board)
   }
   float value[8];
   simde_mm256_storeu_ps(value, v);
-  //std::cout << value[0] << " " << value[1] << " " << value[2] << "\n";
+  std::cout << "\n" << value[0] << " " << value[1] << " " << value[2] << "\n";
   return value[0]-value[1];
 }
 
@@ -111,7 +183,7 @@ bool ModelWeight::loadParam(std::string filepath)
 
   string modelname;
   fs >> modelname;
-  if (modelname != "vo3") {
+  if (modelname != "vo8") {
     cout << "Wrong model type:" << modelname << endl;
     return false;
   }
@@ -138,10 +210,14 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int i = 0; i < 25; i++)
+  for (int i = 0; i < 6; i++)
     for (int j = 0; j < 19683; j++)
       for (int k = 0; k < featureNum; k++)
-        fs >> mapping[i][j][k];
+      {
+        int t;
+        fs >> t;
+        mapping[i][j][k] = t;
+      }
   
 
   //prelu1_w
@@ -222,11 +298,11 @@ bool ModelWeight::loadParam(std::string filepath)
   return true;
 }
 
-NNUE_VO3::ModelWeight::ModelWeight()
+NNUE::ModelWeight::ModelWeight()
 {
 }
 
-NNUE_VO3::ModelWeight::ModelWeight(std::string filepath)
+NNUE::ModelWeight::ModelWeight(std::string filepath)
 {
   loadParam(filepath);
 }

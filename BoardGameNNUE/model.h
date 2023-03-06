@@ -3,20 +3,21 @@
 #include <vector>
 #include <string>
 
-namespace NNUE_VO3 {
+namespace NNUE {
     const int featureNum   = 32;
-    const int featureBatch = featureNum / 16;
+    const int featureBatchInt8 = featureNum / 32;
+    const int featureBatchInt16 = featureNum / 16;
 
     const int mlpChannel = 16;
-    const int mlpBatch32 = mlpChannel / 8;
+    const int mlpBatchFloat = mlpChannel / 8;
 
     struct ModelWeight
     {
-      int16_t mapping[25][19683][featureNum];
+      int8_t mapping[6][19683][featureNum];
 
       int16_t prelu1_w[featureNum];
 
-      // 14  mlp
+      // mlp
       float mlp_w1[featureNum][mlpChannel];  // shape=(inc，outc)，相同的inc对应权重相邻
       float mlp_b1[mlpChannel];
       float mlp_w2[mlpChannel][mlpChannel];
@@ -38,9 +39,9 @@ namespace NNUE_VO3 {
     class Evaluator
     {
     public:
-      const NNUE_VO3::ModelWeight* weights;
+      const NNUE::ModelWeight* weights;
       Evaluator() = delete;
-      Evaluator(const NNUE_VO3::ModelWeight* weights);
+      Evaluator(const NNUE::ModelWeight* weights);
       ~Evaluator();
 
       float eval(const int* board);//board=int[49]
