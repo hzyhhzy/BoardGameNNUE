@@ -1,5 +1,4 @@
 #pragma once
-//#include "NNUEglobal.h"
 #include <vector>
 #include <string>
 
@@ -18,7 +17,7 @@ namespace NNUE {
       int16_t prelu1_w[featureNum];
 
       // mlp
-      float mlp_w1[featureNum][mlpChannel];  // shape=(inc，outc)，相同的inc对应权重相邻
+      float mlp_w1[featureNum][mlpChannel];  
       float mlp_b1[mlpChannel];
       float mlp_w2[mlpChannel][mlpChannel];
       float mlp_b2[mlpChannel];
@@ -48,4 +47,4 @@ namespace NNUE {
 
     };
 
-}  // namespace NNUE_VO3
+}  // namespace NNUE
