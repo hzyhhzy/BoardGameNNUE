@@ -19,7 +19,7 @@ void benchmark()
   NNUE::ModelWeight* model = new NNUE::ModelWeight("vo8_2_100k.txt");
   NNUE::Evaluator eva(model);
 
-  int64_t testnum = 20000000;
+  int64_t testnum = 10000000;
 
   std::mt19937_64 prng{ uint64_t(now_ms()) };
   prng();
