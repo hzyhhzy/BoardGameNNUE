@@ -88,10 +88,6 @@ void testeval()
   }
 
   float score = eva.eval(board);
-  board[12] = 0;
-  score = eva.eval(board);
-  board[12] = 1;
-  score = eva.eval(board);
   cout << score;
   delete model;
 }
@@ -104,7 +100,7 @@ void testeval()
 
 int main()
 {
-  benchmark();
+  testeval();
 }
 
 // 运行程序: Ctrl + F5 或调试 >“开始执行(不调试)”菜单

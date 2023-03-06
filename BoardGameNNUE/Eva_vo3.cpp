@@ -14,7 +14,7 @@ float Evaluator::eval(const int* board)
 {
   simde__m256i sum[featureBatch];
   for (int batch = 0; batch < featureBatch; batch++)
-    sum[batch]= simde_mm256_loadu_si256((const simde__m256i*)(cache.mapsum + batch * 16));
+    sum[batch] = simde_mm256_setzero_si256();
 
   for (int y = 0; y < 5; y++)
     for (int x = 0; x < 5; x++)
@@ -22,33 +22,18 @@ float Evaluator::eval(const int* board)
       int loc = y * 7 + x;
       int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
       int feature_loc = y * 5 + x;
-      //if(false)
-      int oldfId = cache.shapeIndexs[feature_loc];
-      if (oldfId == feature_id)
+      for (int batch = 0; batch < featureBatch; batch++)
       {
-        //for (int batch = 0; batch < featureBatch; batch++)
-        //{
-        //  auto f = simde_mm256_loadu_si256((const simde__m256i*)(cache.mappingCache[feature_loc] + batch * 16));
-        //  sum[batch] = simde_mm256_add_epi16(sum[batch], f);
-        //}
-      }
-      else
-      {
-        for (int batch = 0; batch < featureBatch; batch++)
-        {
-          auto oldf = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][oldfId] + batch * 16));
-          auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
-          sum[batch] =simde_mm256_add_epi16(simde_mm256_sub_epi16(sum[batch],oldf), f);
-          cache.shapeIndexs[feature_loc] = feature_id;
-          simde_mm256_storeu_si256((simde__m256i*)(cache.mappingCache[feature_loc] + batch * 16),f);
-        }
+        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
+        sum[batch] = simde_mm256_add_epi16(sum[batch], f);
       }
     }
+
 
   float layer0[featureNum];
   for (int batch = 0; batch < featureBatch; batch++)
   {
-    auto prelu1_w = simde_mm256_loadu_si256(reinterpret_cast<const simde__m256i*>(weights->prelu1_w + batch * 16));
+    auto prelu1_w = simde_mm256_loadu_si256((const simde__m256i*)(weights->prelu1_w + batch * 16));
     auto x = sum[batch];
     x = simde_mm256_max_epi16(x, simde_mm256_mulhrs_epi16(x, prelu1_w));
     simde_mm256_storeu_ps(layer0 + batch * 16, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 0))));
@@ -248,10 +233,6 @@ NNUE_VO3::ModelWeight::ModelWeight(std::string filepath)
 
 Evaluator::Evaluator(const ModelWeight* weights):weights(weights)
 {
-  for (int i = 0; i < 25; i++)
-  {
-    cache.shapeIndexs[i] = -1;
-  }
 }
 
 Evaluator::~Evaluator()

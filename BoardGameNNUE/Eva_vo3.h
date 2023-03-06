@@ -33,19 +33,12 @@ namespace NNUE_VO3 {
       ModelWeight(std::string filepath);
     };
 
-    struct ModelCache
-    {
-      int32_t shapeIndexs[25];
-      int16_t mappingCache[25][featureNum];
-      int16_t mapsum[featureNum];
-    };
 
 
     class Evaluator
     {
     public:
       const NNUE_VO3::ModelWeight* weights;
-      NNUE_VO3::ModelCache cache;
       Evaluator() = delete;
       Evaluator(const NNUE_VO3::ModelWeight* weights);
       ~Evaluator();
