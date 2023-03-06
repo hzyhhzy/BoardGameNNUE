@@ -10,11 +10,11 @@
 #include <filesystem>
 using namespace NNUE_VO3;
 
-float Eva_vo3::eval(const int* board) const
+float Evaluator::eval(const int* board)
 {
   simde__m256i sum[featureBatch];
   for (int batch = 0; batch < featureBatch; batch++)
-    sum[batch]=simde_mm256_setzero_si256();
+    sum[batch]= simde_mm256_loadu_si256((const simde__m256i*)(cache.mapsum + batch * 16));
 
   for (int y = 0; y < 5; y++)
     for (int x = 0; x < 5; x++)
@@ -22,17 +22,33 @@ float Eva_vo3::eval(const int* board) const
       int loc = y * 7 + x;
       int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
       int feature_loc = y * 5 + x;
-      for (int batch = 0; batch < featureBatch; batch++)
+      //if(false)
+      int oldfId = cache.shapeIndexs[feature_loc];
+      if (oldfId == feature_id)
       {
-        auto f = simde_mm256_loadu_si256(weights->mapping[feature_loc][feature_id] + batch * 16);
-        sum[batch] = simde_mm256_add_epi16(sum[batch], f);
+        //for (int batch = 0; batch < featureBatch; batch++)
+        //{
+        //  auto f = simde_mm256_loadu_si256((const simde__m256i*)(cache.mappingCache[feature_loc] + batch * 16));
+        //  sum[batch] = simde_mm256_add_epi16(sum[batch], f);
+        //}
+      }
+      else
+      {
+        for (int batch = 0; batch < featureBatch; batch++)
+        {
+          auto oldf = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][oldfId] + batch * 16));
+          auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
+          sum[batch] =simde_mm256_add_epi16(simde_mm256_sub_epi16(sum[batch],oldf), f);
+          cache.shapeIndexs[feature_loc] = feature_id;
+          simde_mm256_storeu_si256((simde__m256i*)(cache.mappingCache[feature_loc] + batch * 16),f);
+        }
       }
     }
 
   float layer0[featureNum];
   for (int batch = 0; batch < featureBatch; batch++)
   {
-    auto prelu1_w = simde_mm256_loadu_si256(weights->prelu1_w + batch * 16);
+    auto prelu1_w = simde_mm256_loadu_si256(reinterpret_cast<const simde__m256i*>(weights->prelu1_w + batch * 16));
     auto x = sum[batch];
     x = simde_mm256_max_epi16(x, simde_mm256_mulhrs_epi16(x, prelu1_w));
     simde_mm256_storeu_ps(layer0 + batch * 16, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 0))));
@@ -80,10 +96,33 @@ float Eva_vo3::eval(const int* board) const
 }
 
 
-bool ModelWeight::loadParam(std::string filename)
+bool ModelWeight::loadParam(std::string filepath)
 {
+  using namespace std::filesystem;
+  path ext = path(filepath).extension();
+  if (ext.string() == ".bin") {
+    std::ifstream cacheStream(path(filepath), std::ios::binary);
+    cacheStream.read(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+    if (cacheStream.good()) {
+      return true;
+    }
+    else
+      return false;
+  }
+
+  path cachePath = path(filepath).replace_extension("bin");
+  // Read parameter cache if exists
+  if (exists(cachePath)) {
+    std::ifstream cacheStream(cachePath, std::ios::binary);
+    cacheStream.read(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+    if (cacheStream.good()) {
+      return true;
+    }
+  }
+
+
   using namespace std;
-  ifstream fs(filename);
+  ifstream fs(filepath);
 
   string modelname;
   fs >> modelname;
@@ -191,45 +230,30 @@ bool ModelWeight::loadParam(std::string filename)
     mlpfinal_b_for_safety[i] = 0;
   }
 
+  //save bin model
+  std::ofstream cacheStream(cachePath, std::ios::binary);
+  cacheStream.write(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+  
   return true;
 }
 
-Eva_vo3::~Eva_vo3()
+NNUE_VO3::ModelWeight::ModelWeight()
 {
-  if (weights != NULL)delete weights;
 }
 
-bool Eva_vo3::loadParam(std::string filepath)
+NNUE_VO3::ModelWeight::ModelWeight(std::string filepath)
 {
-  if (weights == NULL)weights = new ModelWeight;
+  loadParam(filepath);
+}
 
-  using namespace std::filesystem;
-  path ext = path(filepath).extension();
-  if (ext.string() == ".bin") {
-    std::ifstream cacheStream(path(filepath), std::ios::binary);
-    cacheStream.read(reinterpret_cast<char*>(weights), sizeof(ModelWeight));
-    if (cacheStream.good()) {
-      return true;
-    }
-    else
-      return false;
+Evaluator::Evaluator(const ModelWeight* weights):weights(weights)
+{
+  for (int i = 0; i < 25; i++)
+  {
+    cache.shapeIndexs[i] = -1;
   }
+}
 
-  path cachePath = path(filepath).replace_extension("bin");
-  // Read parameter cache if exists
-  if (exists(cachePath)) {
-    std::ifstream cacheStream(cachePath, std::ios::binary);
-    cacheStream.read(reinterpret_cast<char*>(weights), sizeof(ModelWeight));
-    if (cacheStream.good()) {
-      return true;
-    }
-  }
-
-  bool suc = weights->loadParam(filepath);
-  if (suc) {
-    // Save parameters cache
-    std::ofstream cacheStream(cachePath, std::ios::binary);
-    cacheStream.write(reinterpret_cast<char*>(weights), sizeof(ModelWeight));
-  }
-  return suc;
+Evaluator::~Evaluator()
+{
 }

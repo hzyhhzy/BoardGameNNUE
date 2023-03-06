@@ -16,8 +16,8 @@ inline int64_t now_ms()
 
 void benchmark()
 {
-  Eva_vo3 eva;
-  eva.loadParam("vo3_3.txt");
+  NNUE_VO3::ModelWeight* model = new NNUE_VO3::ModelWeight("vo3_3.txt");
+  NNUE_VO3::Evaluator eva(model);
 
   int64_t testnum = 5000000;
 
@@ -31,7 +31,8 @@ void benchmark()
 
   // 平均每play和undo两次，然后eval一次
   for (int64_t i = 0; i < testnum; i++) {
-
+    //board[prng() % 49] = prng() % 3;
+    // 
     //generate random board
     for (int a = 0; a < 2; a++)
     {
@@ -49,6 +50,8 @@ void benchmark()
   double  time_used = time_end - time_start;
   cout << "NNevals = " << testnum << " Time = " << time_used / 1000.0 << " s" << endl;
   cout << "Speed = " << testnum / time_used * 1000.0 << " eval/s" << endl;
+
+  delete model;
 }
 
 
@@ -68,9 +71,8 @@ void testeval()
     ;
     
 
-
-  Eva_vo3 eva;
-  eva.loadParam("vo3_3.txt");
+  NNUE_VO3::ModelWeight* model = new NNUE_VO3::ModelWeight("vo3_3.txt");
+  NNUE_VO3::Evaluator eva(model);
 
 
   int board[49];
@@ -86,8 +88,12 @@ void testeval()
   }
 
   float score = eva.eval(board);
+  board[12] = 0;
+  score = eva.eval(board);
+  board[12] = 1;
+  score = eva.eval(board);
   cout << score;
-
+  delete model;
 }
 
 

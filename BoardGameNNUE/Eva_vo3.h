@@ -28,16 +28,30 @@ namespace NNUE_VO3 {
       float mlpfinal_b_for_safety[5];  // mlp_b3在read的时候一次read
                                    // 8个，会read到后续内存mlp_b3[2]+5，
 
-      bool loadParam(std::string filename);
+      bool loadParam(std::string filepath);
+      ModelWeight();
+      ModelWeight(std::string filepath);
     };
+
+    struct ModelCache
+    {
+      int32_t shapeIndexs[25];
+      int16_t mappingCache[25][featureNum];
+      int16_t mapsum[featureNum];
+    };
+
+
+    class Evaluator
+    {
+    public:
+      const NNUE_VO3::ModelWeight* weights;
+      NNUE_VO3::ModelCache cache;
+      Evaluator() = delete;
+      Evaluator(const NNUE_VO3::ModelWeight* weights);
+      ~Evaluator();
+
+      float eval(const int* board);//board=int[49]
+
+    };
+
 }  // namespace NNUE_VO3
-class Eva_vo3
-{
-public:
-  NNUE_VO3::ModelWeight* weights;
-  ~Eva_vo3();
-
-  bool loadParam(std::string filepath);
-  float eval(const int* board) const;//board=int[49]
-
-};
