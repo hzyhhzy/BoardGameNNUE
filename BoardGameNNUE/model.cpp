@@ -128,6 +128,8 @@ bool ModelWeight::loadParam(std::string filepath)
 
     return true;
   }
+
+  return false;
 }
 
 bool NNUE::ModelWeight::loadParamTxtStream(std::ifstream& fs)
