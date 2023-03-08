@@ -7,7 +7,6 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-#include <filesystem>
 using namespace NNUE;
 
 float Evaluator::eval(const int* board)
@@ -82,10 +81,14 @@ float Evaluator::eval(const int* board)
 
 bool ModelWeight::loadParam(std::string filepath)
 {
-  using namespace std::filesystem;
-  path ext = path(filepath).extension();
-  if (ext.string() == ".bin") {
-    std::ifstream cacheStream(path(filepath), std::ios::binary);
+  using namespace std;
+  if (filepath.size() < 4) {
+    cout << "Unknown model type: " << filepath << endl;
+    return false;
+  }
+  string ext = filepath.substr(filepath.size() - 4);
+  if (ext == ".bin") {
+    std::ifstream cacheStream(filepath, std::ios::binary);
     cacheStream.read(reinterpret_cast<char*>(this), sizeof(ModelWeight));
     if (cacheStream.good()) {
       return true;
@@ -93,21 +96,43 @@ bool ModelWeight::loadParam(std::string filepath)
     else
       return false;
   }
+  else if (ext == ".txt")
+  {
 
-  path cachePath = path(filepath).replace_extension("bin");
-  // Read parameter cache if exists
-  if (exists(cachePath)) {
+    string cachePath = filepath.substr(0, filepath.size() - 4) + ".bin";
+    //cout << cachePath;
+    // Read parameter cache if exists
     std::ifstream cacheStream(cachePath, std::ios::binary);
-    cacheStream.read(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+    if (cacheStream.good()) {
+      cacheStream.read(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+    }
     if (cacheStream.good()) {
       return true;
     }
+
+
+    using namespace std;
+    ifstream fs(filepath);
+    bool suc;
+    if (fs.good()) {
+      suc = loadParamTxtStream(fs);
+      if (!suc)return false;
+    }
+    else return false;
+
+
+
+    //save bin model
+    std::ofstream cacheStreamOut(cachePath, std::ios::binary);
+    cacheStreamOut.write(reinterpret_cast<char*>(this), sizeof(ModelWeight));
+
+    return true;
   }
+}
 
-
+bool NNUE::ModelWeight::loadParamTxtStream(std::ifstream& fs)
+{
   using namespace std;
-  ifstream fs(filepath);
-
   string modelname;
   fs >> modelname;
   if (modelname != "vov1") {
@@ -150,16 +175,16 @@ bool ModelWeight::loadParam(std::string filepath)
         fs >> t;
         mapping[i][j][k] = t;
       }
-  
+
 
   //prelu1_w
   fs >> varname;
   if (varname != "prelu1_w") {
-      cout << "Wrong parameter name:" << varname << endl;
-      return false;
+    cout << "Wrong parameter name:" << varname << endl;
+    return false;
   }
   for (int j = 0; j < featureNum; j++)
-      fs >> prelu1_w[j];
+    fs >> prelu1_w[j];
 
   // mlp_w1
   fs >> varname;
@@ -169,7 +194,7 @@ bool ModelWeight::loadParam(std::string filepath)
   }
   for (int j = 0; j < featureNum; j++)
     for (int i = 0; i < mlpChannel1; i++)
-        fs >> mlp_w1[j][i];
+      fs >> mlp_w1[j][i];
 
   // mlp_b1
   fs >> varname;
@@ -214,13 +239,7 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-    fs >> mlpfinal_b;
-
-
-  //save bin model
-  std::ofstream cacheStream(cachePath, std::ios::binary);
-  cacheStream.write(reinterpret_cast<char*>(this), sizeof(ModelWeight));
-  
+  fs >> mlpfinal_b;
   return true;
 }
 

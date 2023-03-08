@@ -148,5 +148,6 @@ void checkeval()
 
 int main()
 {
-  benchmark();
+  checkeval();
+  //benchmark();
 }

@@ -27,6 +27,7 @@ namespace NNUE {
       float mlpfinal_b;
 
       bool loadParam(std::string filepath);
+      bool loadParamTxtStream(std::ifstream& fs);
       ModelWeight();
       ModelWeight(std::string filepath);
     };
