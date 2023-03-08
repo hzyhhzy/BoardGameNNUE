@@ -1,8 +1,9 @@
 #include "model.h"
 
 #include <cmath>
-#include "external/simde_avx2.h"
-#include "external/simde_fma.h"
+//#include "external/_avx2.h"
+//#include "external/_fma.h"
+#include <immintrin.h>
 
 #include <iostream>
 #include <fstream>
@@ -11,9 +12,9 @@ using namespace NNUE;
 
 float Evaluator::eval(const int* board)
 {
-  simde__m256i sum[featureBatchInt16];
+  __m256i sum[featureBatchInt16];
   for (int batch = 0; batch < featureBatchInt16; batch++)
-    sum[batch] = simde_mm256_setzero_si256();
+    sum[batch] = _mm256_setzero_si256();
 
 
   for (int y = 0; y < 5; y++)
@@ -26,8 +27,8 @@ float Evaluator::eval(const int* board)
 
       for (int batch = 0; batch < featureBatchInt16; batch++)
       {
-        auto f = simde_mm_loadu_si128((const simde__m128i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
-        sum[batch] = simde_mm256_add_epi16(sum[batch], simde_mm256_cvtepi8_epi16(f));
+        auto f = _mm_loadu_si128((const __m128i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
+        sum[batch] = _mm256_add_epi16(sum[batch], _mm256_cvtepi8_epi16(f));
       }
     }
 
@@ -35,11 +36,11 @@ float Evaluator::eval(const int* board)
   float layer0[featureNum];
   for (int batch = 0; batch < featureBatchInt16; batch++)
   {
-    auto prelu1_w = simde_mm256_loadu_si256((const simde__m256i*)(weights->prelu1_w + batch * 16));
+    auto prelu1_w = _mm256_loadu_si256((const __m256i*)(weights->prelu1_w + batch * 16));
     auto x = sum[batch];
-    x = simde_mm256_max_epi16(x, simde_mm256_mulhrs_epi16(x, prelu1_w));
-    simde_mm256_storeu_ps(layer0 + batch * 16, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 0))));
-    simde_mm256_storeu_ps(layer0 + batch * 16 + 8, simde_mm256_cvtepi32_ps(simde_mm256_cvtepi16_epi32(simde_mm256_extractf128_si256(x, 1))));
+    x = _mm256_max_epi16(x, _mm256_mulhrs_epi16(x, prelu1_w));
+    _mm256_storeu_ps(layer0 + batch * 16, _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(_mm256_extractf128_si256(x, 0))));
+    _mm256_storeu_ps(layer0 + batch * 16 + 8, _mm256_cvtepi32_ps(_mm256_cvtepi16_epi32(_mm256_extractf128_si256(x, 1))));
   }
   //for (int i = 0; i < featureNum; i++)std::cout << layer0[i] << " ";
 
@@ -47,27 +48,27 @@ float Evaluator::eval(const int* board)
   // linear 1
   float layer1[mlpChannel1];
   for (int i = 0; i < mlpBatchFloat1; i++) {
-    auto sum = simde_mm256_loadu_ps(weights->mlp_b1 + i * 8);
+    auto sum = _mm256_loadu_ps(weights->mlp_b1 + i * 8);
     for (int j = 0; j < featureNum; j++) {
-      auto x = simde_mm256_set1_ps(layer0[j]);
-      auto w = simde_mm256_loadu_ps(weights->mlp_w1[j] + i * 8);
-      sum = simde_mm256_fmadd_ps(w, x, sum);
+      auto x = _mm256_set1_ps(layer0[j]);
+      auto w = _mm256_loadu_ps(weights->mlp_w1[j] + i * 8);
+      sum = _mm256_fmadd_ps(w, x, sum);
     }
-    sum = simde_mm256_max_ps(simde_mm256_setzero_ps(), sum);  // relu
-    simde_mm256_storeu_ps(layer1 + i * 8, sum);
+    sum = _mm256_max_ps(_mm256_setzero_ps(), sum);  // relu
+    _mm256_storeu_ps(layer1 + i * 8, sum);
   }
 
   // linear 2
   float layer2[mlpChannel2];
   for (int i = 0; i < mlpBatchFloat2; i++) {
-    auto sum = simde_mm256_loadu_ps(weights->mlp_b2 + i * 8);
+    auto sum = _mm256_loadu_ps(weights->mlp_b2 + i * 8);
     for (int j = 0; j < mlpChannel1; j++) {
-      auto x = simde_mm256_set1_ps(layer1[j]);
-      auto w = simde_mm256_loadu_ps(weights->mlp_w2[j] + i * 8);
-      sum = simde_mm256_fmadd_ps(w, x, sum);
+      auto x = _mm256_set1_ps(layer1[j]);
+      auto w = _mm256_loadu_ps(weights->mlp_w2[j] + i * 8);
+      sum = _mm256_fmadd_ps(w, x, sum);
     }
-    sum = simde_mm256_max_ps(simde_mm256_setzero_ps(), sum);  // relu
-    simde_mm256_storeu_ps(layer2 + i * 8, sum);
+    sum = _mm256_max_ps(_mm256_setzero_ps(), sum);  // relu
+    _mm256_storeu_ps(layer2 + i * 8, sum);
   }
   
   // final linear
