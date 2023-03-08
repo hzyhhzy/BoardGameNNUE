@@ -16,21 +16,29 @@ float Evaluator::eval(const int* board)
   for (int batch = 0; batch < featureBatchInt16; batch++)
     sum[batch] = simde_mm256_setzero_si256();
 
+  int feature_ids[25];
 
   for (int y = 0; y < 5; y++)
     for (int x = 0; x < 5; x++)
     {
       int loc = y * 7 + x;
       int feature_loc = y * 5 + x; 
-      int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
-
-
-      for (int batch = 0; batch < featureBatchInt16; batch++)
-      {
-        auto f = simde_mm_loadu_si128((const simde__m128i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
-        sum[batch] = simde_mm256_add_epi16(sum[batch], simde_mm256_cvtepi8_epi16(f));
-      }
+      int feature_id = 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
+      
+      feature_ids[feature_loc] = feature_id;
+      simde_mm_prefetch((const char*)(weights->mapping[feature_loc][feature_id]), 3);
     }
+
+  for (int feature_loc = 0; feature_loc < 25; feature_loc++)
+  {
+    int feature_id = feature_ids[feature_loc];
+
+    for (int batch = 0; batch < featureBatchInt16; batch++)
+    {
+      auto f = simde_mm_loadu_si128((const simde__m128i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
+      sum[batch] = simde_mm256_add_epi16(sum[batch], simde_mm256_cvtepi8_epi16(f));
+    }
+  }
 
 
   float layer0[featureNum];
