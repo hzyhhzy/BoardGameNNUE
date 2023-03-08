@@ -3,30 +3,28 @@
 #include <string>
 
 namespace NNUE {
-    const int featureNum   = 32;
+    const int featureNum   = 128;
     const int featureBatchInt8 = featureNum / 32;
     const int featureBatchInt16 = featureNum / 16;
 
-    const int mlpChannel = 16;
-    const int mlpBatchFloat = mlpChannel / 8;
+    const int mlpChannel1 = 8;
+    const int mlpBatchFloat1 = mlpChannel1 / 8;
+    const int mlpChannel2 = 64;
+    const int mlpBatchFloat2 = mlpChannel2 / 8;
 
     struct ModelWeight
     {
-      int8_t mapping[6][19683][featureNum];
+      int8_t mapping[25][19683][featureNum];
 
       int16_t prelu1_w[featureNum];
 
       // mlp
-      float mlp_w1[featureNum][mlpChannel];  
-      float mlp_b1[mlpChannel];
-      float mlp_w2[mlpChannel][mlpChannel];
-      float mlp_b2[mlpChannel];
-      float mlpfinal_w[ mlpChannel][3];
-      float mlpfinal_w_for_safety[5];  // mlp_w3在read的时候一次read
-                                   // 8个，会read到后续内存mlp_w3[valueNum-1][2]+5，
-      float mlpfinal_b[3];
-      float mlpfinal_b_for_safety[5];  // mlp_b3在read的时候一次read
-                                   // 8个，会read到后续内存mlp_b3[2]+5，
+      float mlp_w1[featureNum][mlpChannel1];  
+      float mlp_b1[mlpChannel1];
+      float mlp_w2[mlpChannel1][mlpChannel2];
+      float mlp_b2[mlpChannel2];
+      float mlpfinal_w[mlpChannel2];
+      float mlpfinal_b;
 
       bool loadParam(std::string filepath);
       ModelWeight();

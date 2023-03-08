@@ -16,85 +16,19 @@ float Evaluator::eval(const int* board)
   for (int batch = 0; batch < featureBatchInt16; batch++)
     sum[batch] = simde_mm256_setzero_si256();
 
-  static const int featureGroupIds[25] = {
-    0,1,2,1,0,
-    1,3,4,3,1,
-    2,4,5,4,2,
-    1,3,4,3,1,
-    0,1,2,1,0 };
-  static const int featureSymIds[25] =
-  { 3,7,5,5,1,
-    3,3,5,1,1,
-    2,2,0,0,0,
-    2,2,4,0,0,
-    2,6,4,4,0
-  };
-  static const int featureSymKernels[8][9] =
-  {
-    {
-         1,    3,    9,
-        27,   81,  243,
-       729, 2187, 6561,
-    },
-    {
-       729, 2187, 6561,
-        27,   81,  243,
-         1,    3,    9,
-    },
-    {
-         9,    3,    1,
-       243,   81,   27,
-      6561, 2187,  729,
-    },
-    {
-      6561, 2187,  729,
-       243,   81,   27,
-         9,    3,    1,
-    },
-    {
-         1,   27,  729,
-         3,   81, 2187,
-         9,  243, 6561,
-    },
-    {
-         9,  243, 6561,
-         3,   81, 2187,
-         1,   27,  729,
-    },
-    {
-       729,   27,    1,
-      2187,   81,    3,
-      6561,  243,    9,
-    },
-    {
-      6561,  243,    9,
-      2187,   81,    3,
-       729,   27,    1,
-    },
-  };
 
   for (int y = 0; y < 5; y++)
     for (int x = 0; x < 5; x++)
     {
       int loc = y * 7 + x;
-      int feature_loc = y * 5 + x;
-      int sym = featureSymIds[feature_loc];
-      int feature_group = featureGroupIds[feature_loc];
-      int feature_id = 
-        featureSymKernels[sym][0] * board[loc + 0] + 
-        featureSymKernels[sym][1] * board[loc + 1] + 
-        featureSymKernels[sym][2] * board[loc + 2] + 
-        featureSymKernels[sym][3] * board[loc + 7] +
-        featureSymKernels[sym][4] * board[loc + 8] +
-        featureSymKernels[sym][5] * board[loc + 9] +
-        featureSymKernels[sym][6] * board[loc + 14] +
-        featureSymKernels[sym][7] * board[loc + 15] +
-        featureSymKernels[sym][8] * board[loc + 16];
+      int feature_loc = y * 5 + x; 
+      int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
+
 
 
       for (int batch = 0; batch < featureBatchInt8; batch++)
       {
-        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_group][feature_id] + batch * 32));
+        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 32));
         sum[2 * batch] = simde_mm256_add_epi16(sum[2 * batch], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 0)));
         sum[2 * batch + 1] = simde_mm256_add_epi16(sum[2 * batch + 1], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 1)));
       }
@@ -114,8 +48,8 @@ float Evaluator::eval(const int* board)
 
 
   // linear 1
-  float layer1[mlpChannel];
-  for (int i = 0; i < mlpBatchFloat; i++) {
+  float layer1[mlpChannel1];
+  for (int i = 0; i < mlpBatchFloat1; i++) {
     auto sum = simde_mm256_loadu_ps(weights->mlp_b1 + i * 8);
     for (int j = 0; j < featureNum; j++) {
       auto x = simde_mm256_set1_ps(layer0[j]);
@@ -127,10 +61,10 @@ float Evaluator::eval(const int* board)
   }
 
   // linear 2
-  float layer2[mlpChannel];
-  for (int i = 0; i < mlpBatchFloat; i++) {
+  float layer2[mlpChannel2];
+  for (int i = 0; i < mlpBatchFloat2; i++) {
     auto sum = simde_mm256_loadu_ps(weights->mlp_b2 + i * 8);
-    for (int j = 0; j < mlpChannel; j++) {
+    for (int j = 0; j < mlpChannel1; j++) {
       auto x = simde_mm256_set1_ps(layer1[j]);
       auto w = simde_mm256_loadu_ps(weights->mlp_w2[j] + i * 8);
       sum = simde_mm256_fmadd_ps(w, x, sum);
@@ -140,16 +74,11 @@ float Evaluator::eval(const int* board)
   }
   
   // final linear
-  auto v = simde_mm256_loadu_ps(weights->mlpfinal_b);
-  for (int inc = 0; inc < mlpChannel; inc++) {
-    auto x = simde_mm256_set1_ps(layer2[inc]);
-    auto w = simde_mm256_loadu_ps(weights->mlpfinal_w[inc]);
-    v = simde_mm256_fmadd_ps(w, x, v);
+  double v = weights->mlpfinal_b;
+  for (int i = 0; i < mlpChannel2; i++) {
+    v += layer2[i] * weights->mlpfinal_w[i];
   }
-  float value[8];
-  simde_mm256_storeu_ps(value, v);
-  //std::cout << "\n" << value[0] << " " << value[1] << " " << value[2] << "\n";
-  return value[0]-value[1];
+  return v;
 }
 
 
@@ -183,7 +112,7 @@ bool ModelWeight::loadParam(std::string filepath)
 
   string modelname;
   fs >> modelname;
-  if (modelname != "vo8") {
+  if (modelname != "vo3b") {
     cout << "Wrong model type:" << modelname << endl;
     return false;
   }
@@ -195,7 +124,7 @@ bool ModelWeight::loadParam(std::string filepath)
     return false;
   }
   fs >> param;
-  if (param != mlpChannel) {
+  if (param != mlpChannel1) {
     cout << "Wrong mlp channel:" << param << endl;
     return false;
   }
@@ -210,7 +139,7 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int i = 0; i < 6; i++)
+  for (int i = 0; i < 25; i++)
     for (int j = 0; j < 19683; j++)
       for (int k = 0; k < featureNum; k++)
       {
@@ -236,7 +165,7 @@ bool ModelWeight::loadParam(std::string filepath)
     return false;
   }
   for (int j = 0; j < featureNum; j++)
-    for (int i = 0; i < mlpChannel; i++)
+    for (int i = 0; i < mlpChannel1; i++)
         fs >> mlp_w1[j][i];
 
   // mlp_b1
@@ -245,7 +174,7 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int i = 0; i < mlpChannel; i++)
+  for (int i = 0; i < mlpChannel1; i++)
     fs >> mlp_b1[i];
 
   // mlp_w2
@@ -254,8 +183,8 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int j = 0; j < mlpChannel; j++)
-    for (int i = 0; i < mlpChannel; i++)
+  for (int j = 0; j < mlpChannel1; j++)
+    for (int i = 0; i < mlpChannel2; i++)
       fs >> mlp_w2[j][i];
 
   // mlp_b2
@@ -264,7 +193,7 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int i = 0; i < mlpChannel; i++)
+  for (int i = 0; i < mlpChannel2; i++)
     fs >> mlp_b2[i];
 
   // mlpfinal_w
@@ -273,9 +202,8 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int j = 0; j < mlpChannel; j++)
-    for (int i = 0; i < 3; i++)
-      fs >> mlpfinal_w[j][i];
+  for (int j = 0; j < mlpChannel2; j++)
+    fs >> mlpfinal_w[j];
 
   // mlpfinal_b
   fs >> varname;
@@ -283,13 +211,8 @@ bool ModelWeight::loadParam(std::string filepath)
     cout << "Wrong parameter name:" << varname << endl;
     return false;
   }
-  for (int i = 0; i < 3; i++)
-    fs >> mlpfinal_b[i];
+    fs >> mlpfinal_b;
 
-  for (int i = 0; i < 5; i++) {
-    mlpfinal_w_for_safety[i] = 0;
-    mlpfinal_b_for_safety[i] = 0;
-  }
 
   //save bin model
   std::ofstream cacheStream(cachePath, std::ios::binary);

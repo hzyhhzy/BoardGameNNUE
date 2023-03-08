@@ -14,7 +14,7 @@ inline int64_t now_ms()
 
 void benchmark()
 {
-  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo8_2_100k.txt");
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
   NNUE::Evaluator eva(model);
 
   int64_t testnum = 10000000;
@@ -57,7 +57,7 @@ void benchmark()
 
 
 
-void testeval()
+void debugeval()
 {
   
   string boardstr =
@@ -73,7 +73,7 @@ void testeval()
   //string boardstr = "oxxx.x.oooxoo.xxxxxoooxoo.xo.ooox..xx.oxxo.oxoox.";
   //string boardstr = ".................................................";
 
-  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo8_2_100k.txt");
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
   NNUE::Evaluator eva(model);
 
 
@@ -93,6 +93,52 @@ void testeval()
   cout << score;
   delete model;
 }
+
+void checkeval()
+{
+  const int toTestNum = 10;
+
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
+  NNUE::Evaluator eva(model);
+
+
+  string boardstrs[toTestNum] = {
+    "x.o..x.ooxoxxoxo.oox..o...oxx.xxxxo.ox.xo.o.o.oo.",
+    "oxoxox.x.xoxxoxoxx.xxxo.xxx.xxoxo.xoooox.xxoxoxoo",
+    "oxo..xxx.ooooo.xxxo.ooo.ooox.oo.x..xox.oo.oooxo..",
+    ".xxxox.ox...o...ox..oo.....oo...o.xx.xoox.ooo...o",
+    "o.o.xoxx.xxx.x..xxxx.oxxoo...x.o.o.xx..xx.xo..xxx",
+    "xo.xxoxx...xxox.o....ooooxo.xxoo.xxoo.xxx.xxoxx.o",
+    "xxx.xxoo.o.x.oooxx...o..o...oxoo..x....o.oxoxoo.x",
+    ".x..oxox.oooo...oxx.oxxoo.x..x...xooooxoo..o.xxx.",
+    "o.oooxo.x...ox.xoo.o.oo.oo.oxoooxo.o.....xxxoxo.x",
+    "ox.xoox.xoxoxoxox.oo.x.x.x...o.ox...xxxxooxxx.xox",
+  };
+
+
+  int board[49];
+
+  for (int n = 0; n < toTestNum; n++)
+  {
+    string boardstr = boardstrs[n];
+    for (int i = 0; i < 49; i++)
+    {
+      char c = boardstr[i];
+      if (c == '.')
+        board[i] = 0;
+      if (c == 'x')
+        board[i] = 1;
+      if (c == 'o')
+        board[i] = 2;
+    }
+
+    float score = eva.eval(board);
+    cout << score << endl;
+  }
+  delete model;
+}
+
+
 
 
 
