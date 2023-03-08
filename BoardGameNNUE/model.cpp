@@ -23,7 +23,7 @@ float Evaluator::eval(const int* board)
     {
       int loc = y * 7 + x;
       int feature_loc = y * 5 + x; 
-      int feature_id = 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
+      int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
       
       feature_ids[feature_loc] = feature_id;
       simde_mm_prefetch((const char*)(weights->mapping[feature_loc][feature_id]), 3);
