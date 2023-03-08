@@ -25,12 +25,10 @@ float Evaluator::eval(const int* board)
       int feature_id = 1 * board[loc + 0] + 3 * board[loc + 1] + 9 * board[loc + 2] + 27 * board[loc + 7] + 81 * board[loc + 8] + 243 * board[loc + 9] + 729 * board[loc + 14] + 2187 * board[loc + 15] + 6561 * board[loc + 16];
 
 
-
-      for (int batch = 0; batch < featureBatchInt8; batch++)
+      for (int batch = 0; batch < featureBatchInt16; batch++)
       {
-        auto f = simde_mm256_loadu_si256((const simde__m256i*)(weights->mapping[feature_loc][feature_id] + batch * 32));
-        sum[2 * batch] = simde_mm256_add_epi16(sum[2 * batch], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 0)));
-        sum[2 * batch + 1] = simde_mm256_add_epi16(sum[2 * batch + 1], simde_mm256_cvtepi8_epi16(simde_mm256_extractf128_si256(f, 1)));
+        auto f = simde_mm_loadu_si128((const simde__m128i*)(weights->mapping[feature_loc][feature_id] + batch * 16));
+        sum[batch] = simde_mm256_add_epi16(sum[batch], simde_mm256_cvtepi8_epi16(f));
       }
     }
 
