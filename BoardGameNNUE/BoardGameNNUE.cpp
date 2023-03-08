@@ -17,7 +17,7 @@ void benchmark()
   NNUE::ModelWeight* model = new NNUE::ModelWeight("vov1_128c.txt");
   NNUE::Evaluator eva(model);
 
-  int64_t testnum = 1000000;
+  int64_t testnum = 5000000;
 
   std::mt19937_64 prng{ uint64_t(now_ms()) };
   prng();
@@ -148,6 +148,6 @@ void checkeval()
 
 int main()
 {
-  checkeval();
-  //benchmark();
+  //checkeval();
+  benchmark();
 }
