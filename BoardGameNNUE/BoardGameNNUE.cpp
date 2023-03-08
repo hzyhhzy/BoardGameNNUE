@@ -14,10 +14,10 @@ inline int64_t now_ms()
 
 void benchmark()
 {
-  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vov1_128c.txt");
   NNUE::Evaluator eva(model);
 
-  int64_t testnum = 10000000;
+  int64_t testnum = 1000000;
 
   std::mt19937_64 prng{ uint64_t(now_ms()) };
   prng();
@@ -73,7 +73,7 @@ void debugeval()
   //string boardstr = "oxxx.x.oooxoo.xxxxxoooxoo.xo.ooox..xx.oxxo.oxoox.";
   //string boardstr = ".................................................";
 
-  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vov1_128c.txt");
   NNUE::Evaluator eva(model);
 
 
@@ -98,7 +98,7 @@ void checkeval()
 {
   const int toTestNum = 10;
 
-  NNUE::ModelWeight* model = new NNUE::ModelWeight("vo3b_128c.txt");
+  NNUE::ModelWeight* model = new NNUE::ModelWeight("vov1_128c.txt");
   NNUE::Evaluator eva(model);
 
 

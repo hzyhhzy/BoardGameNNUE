@@ -112,7 +112,7 @@ bool ModelWeight::loadParam(std::string filepath)
 
   string modelname;
   fs >> modelname;
-  if (modelname != "vo3b") {
+  if (modelname != "vov1") {
     cout << "Wrong model type:" << modelname << endl;
     return false;
   }
@@ -125,6 +125,11 @@ bool ModelWeight::loadParam(std::string filepath)
   }
   fs >> param;
   if (param != mlpChannel1) {
+    cout << "Wrong mlp channel:" << param << endl;
+    return false;
+  }
+  fs >> param;
+  if (param != mlpChannel2) {
     cout << "Wrong mlp channel:" << param << endl;
     return false;
   }
