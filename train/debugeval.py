@@ -89,7 +89,7 @@ if __name__ == '__main__':
                 board[0,0,y,x]=1
             if(c=='o'):
                 board[0,1,y,x]=1
-    v,p=model.forward(board,debugPrint=True)
+    v,p=model.forward(board)
     v=v.detach().cpu().numpy()
     #v=np.exp(v)
     #v=v/np.sum(v)

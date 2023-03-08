@@ -991,6 +991,1074 @@ class Model_vo8(nn.Module):
         assert(map.shape[2]==self.c)
         return map
 
+
+class Model_vo9t1(nn.Module):
+
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=500):
+        super().__init__()
+        self.model_type = "vo9t1"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+
+        self.conv1=nn.Conv2d(2,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        self.conv2=nn.Conv2d(midc,c,3,padding=0)
+
+
+        #mlp
+        self.prelu1=PRelu1(9*c,bias=False,bound=0.999)
+        self.mlp1=nn.Linear(9*c,mlpc)
+        self.mlp2=nn.Linear(mlpc,mlpc)
+        self.mlp3=nn.Linear(mlpc,3)
+
+    def forward(self, x):
+        #mapping
+        y = self.conv1(x)
+        for block in self.mappingtrunk:
+            y=block(y)
+        y=self.conv2(y)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==3)
+        assert(y.shape[3]==3)
+        y=y.view((-1,self.c*3*3))
+
+        #mlp
+        y=self.prelu1(y)
+        y=self.mlp1(y)
+        y=torch.relu(y)
+        y=self.mlp2(y)
+        y=torch.relu(y)
+        v=self.mlp3(y)
+
+        return v, None
+
+class Model_vo10t1(nn.Module):
+
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=500):
+        super().__init__()
+        self.model_type = "vo10t1"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+
+        self.conv1=nn.Conv2d(2,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        self.conv2=nn.Conv2d(midc,c,5,padding=2)
+        self.prelu0=PRelu1(25*c,bias=True,bound=0.999)
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=True,bound=0.999)
+        self.mlp1=nn.Linear(c,mlpc)
+        self.mlp2=nn.Linear(mlpc,mlpc)
+        self.mlp3=nn.Linear(mlpc,3)
+
+    def forward(self, x):
+        #mapping
+        y = self.conv1(x)
+        for block in self.mappingtrunk:
+            y=block(y)
+        y=self.conv2(y)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.c*5*5))
+        y=self.prelu0(y)
+
+        y=y.view((-1,self.c,5*5))
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        y=self.mlp1(y)
+        y=torch.relu(y)
+        y=self.mlp2(y)
+        y=torch.relu(y)
+        v=self.mlp3(y)
+
+        return v, None
+
+
+class Model_vo3t1(nn.Module):
+    #no mlp, single value
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=500):
+        super().__init__()
+        self.model_type = "vo3t1"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.finalLinear=nn.Linear(c,1)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        v=self.finalLinear(y).view(-1)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
+
+class Model_vo3t2(nn.Module):
+    #no mlp
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=500):
+        super().__init__()
+        self.model_type = "vo3t2"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.finalLinear=nn.Linear(c,3)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        v=self.finalLinear(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
+class Model_vo3t3(nn.Module):
+    #simple sum
+    def __init__(self, c=1, mlpc=114514, b=3, midc=128,mapbound=500):
+        super().__init__()
+        self.model_type = "vo3t3"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+
+        return y, None
+
+class Model_vo3t4(nn.Module):
+    #simple sum, 4x4 kernel
+    def __init__(self, c=1, mlpc=114514, b=3, midc=128,mapbound=500):
+        super().__init__()
+        self.model_type = "vo3t4"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,4,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(16,midc,c))-1))
+
+
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==4)
+        assert(y.shape[3]==4)
+        y=y.view((-1,self.midc,4*4))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==4*4)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+
+        return y, None
+
+class Model_vo3t5(nn.Module):
+    #no mlp
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=500):
+        super().__init__()
+        self.model_type = "vo3t5"
+        self.model_param = (c, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        finalWeights=param_init_scale*(2*torch.rand(size=(1,midc,c))-1)
+        self.mappingFinalWeights=nn.Parameter(torch.repeat_interleave(finalWeights,25,dim=0))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.finalLinear=nn.Linear(c,3)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        v=self.finalLinear(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+def fake_quant(x: torch.Tensor, scale=128, zero_point=0, num_bits=8, signed=True):
+    """Fake quantization while keep float gradient."""
+    x_quant = (x.detach() * scale + zero_point).round().int()
+    if num_bits is not None:
+        if signed:
+            qmin = -(2**(num_bits - 1))
+            qmax = 2**(num_bits - 1) - 1
+        else:
+            qmin = 0
+            qmax = 2**num_bits - 1
+        x_quant = torch.clamp(x_quant, qmin, qmax)
+    x_dequant = (x_quant - zero_point).float() / scale
+    x = x - x.detach() + x_dequant  # stop gradient
+    return x
+
+class QuantLinear(nn.Linear):
+    def __init__(self,
+                 in_dim,
+                 out_dim,
+                 bias=True,
+                 input_quant_scale=128,
+                 input_quant_bits=8,
+                 weight_quant_scale=128,
+                 weight_quant_bits=8,
+                 bias_quant_bits=16):
+        super().__init__(in_dim, out_dim, bias=bias)
+        self.input_quant_scale = input_quant_scale
+        self.input_quant_bits = input_quant_bits
+        self.weight_quant_scale = weight_quant_scale
+        self.weight_quant_bits = weight_quant_bits
+        self.bias_quant_bits = bias_quant_bits
+
+    def forward(self, x):
+        x = fake_quant(x, self.input_quant_scale, num_bits=self.input_quant_bits)
+        w = fake_quant(self.weight, self.weight_quant_scale, num_bits=self.weight_quant_bits)
+        if self.bias is not None:
+            b = fake_quant(self.bias,
+                           self.weight_quant_scale * self.input_quant_scale,
+                           num_bits=self.bias_quant_bits)
+            out = nn.functional.linear(x, w, b)
+        else:
+            out = nn.functional.linear(x, w)
+        return out
+
+
+class Model_vo3_int8(nn.Module):
+
+    def __init__(self, c=32, mlpc=16, b=5, midc=256):
+        super().__init__()
+        self.model_type = "vo3_int8"
+        self.model_param = (c, mlpc, b, midc)
+        self.c=c
+        self.mlpc=mlpc
+        self.b=b
+        self.midc=midc
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.mlp1=QuantLinear(c,mlpc)
+        self.mlp2=QuantLinear(mlpc,mlpc)
+        self.mlp3=QuantLinear(mlpc,3)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        y=torch.clamp(y, min=-1, max=127 / 128)
+        y=fake_quant(y, scale=128)  # int8
+        y=torch.sum(y,dim=2)        # sum, without division
+
+        #mlp
+        y=self.prelu1(y)
+        y=fake_quant(y, scale=32768)  # int16
+        y=torch.clamp(y, min=-1, max=127 / 128)
+        y=self.mlp1(y)
+        y=torch.clamp(y, min=0, max=127 / 128)
+        y=self.mlp2(y)
+        y=torch.clamp(y, min=0, max=127 / 128)
+        v=self.mlp3(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
+
+class Model_vo3a(nn.Module):
+
+    def __init__(self, c=32, mlpc=16, b=5, midc=256,mapbound=100):
+        super().__init__()
+        self.model_type = "vov1"
+        self.model_param = (c, mlpc, mlpc, b, midc,mapbound)
+        self.c=c
+        self.mlpc1=mlpc
+        self.mlpc2=mlpc
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.mlp1=nn.Linear(c,mlpc)
+        self.mlp2=nn.Linear(mlpc,mlpc)
+        self.mlp3=nn.Linear(mlpc,1)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        y=self.mlp1(y)
+        y=torch.relu(y)
+        y=self.mlp2(y)
+        y=torch.relu(y)
+        v=self.mlp3(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
+class Model_vo3b(nn.Module):
+    #vo3a+fixed_layer2_mlp_size
+    def __init__(self, c=128, mlpc=8, b=6, midc=512,mapbound=100):
+        super().__init__()
+        self.model_type = "vov1"
+        self.model_param = (c, mlpc, 64, b, midc,mapbound)
+        self.c=c
+        self.mlpc1=mlpc
+        self.mlpc2=64
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        #self.conv2=nn.Linear(midc*25,c,bias=False) #can be separated to 25 parts
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.mlp1=nn.Linear(c,mlpc)
+        self.mlp2=nn.Linear(mlpc,64)
+        self.mlp3=nn.Linear(64,1)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        y=self.mlp1(y)
+        y=torch.relu(y)
+        y=self.mlp2(y)
+        y=torch.relu(y)
+        v=self.mlp3(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
+class Model_vov1(nn.Module):
+    def __init__(self, c=128, mlpc1=8, mlpc2=64, b=6, midc=512, mapbound=100):
+        super().__init__()
+        self.model_type = "vov1"
+        self.model_param = (c, mlpc1, mlpc2, b, midc,mapbound)
+        self.c=c
+        self.mlpc1=mlpc1
+        self.mlpc2=mlpc2
+        self.b=b
+        self.midc=midc
+        self.mapbound=mapbound
+
+        #mapping
+        self.loc_embedding=torch.zeros((1,boardH*boardW,boardH,boardW))
+        for y in range(boardH):
+            for x in range(boardW):
+                self.loc_embedding[0,y*boardW+x,y,x]=1
+        self.loc_embedding=nn.Parameter(self.loc_embedding,requires_grad=False)
+
+        self.conv1=nn.Conv2d(2+boardH*boardW,midc,3,padding=0)
+        self.mappingtrunk=nn.ModuleList()
+        for i in range(b):
+            self.mappingtrunk.append(Conv0dResBlock(in_c=midc,mid_c=midc))
+        param_init_scale=midc**-0.5
+        self.mappingFinalWeights=nn.Parameter(param_init_scale*(2*torch.rand(size=(25,midc,c))-1))
+
+
+        #mlp
+        self.prelu1=PRelu1(c,bias=False,bound=0.999)
+        self.mlp1=nn.Linear(c,mlpc1)
+        self.mlp2=nn.Linear(mlpc1,mlpc2)
+        self.mlp3=nn.Linear(mlpc2,1)
+
+    def forward(self, x):
+        #mapping
+        y=torch.cat((x,torch.repeat_interleave(self.loc_embedding,dim=0,repeats=x.shape[0])),dim=1)
+        y = self.conv1(y)
+        for block in self.mappingtrunk:
+            y=block(y)
+        assert(y.shape[1]==self.midc)
+        assert(y.shape[2]==5)
+        assert(y.shape[3]==5)
+        y=y.view((-1,self.midc,5*5))
+        y=torch.einsum("nch,hco->noh",y,self.mappingFinalWeights)
+        assert(y.shape[1]==self.c)
+        assert(y.shape[2]==5*5)
+
+        if (self.mapbound != 0):
+            y = self.mapbound * torch.tanh(y / self.mapbound)
+
+        y=torch.mean(y,dim=2)
+
+        #mlp
+        y=self.prelu1(y)
+        y=self.mlp1(y)
+        y=torch.relu(y)
+        y=self.mlp2(y)
+        y=torch.relu(y)
+        v=self.mlp3(y)
+
+        return v, None
+
+    def exportMapping(self,device='cuda'):
+        #first, generate [3^9,2,3,3]
+        x=torch.zeros((1,2,3*3))
+        for i in range(9):
+            x1=torch.clone(x)
+            x1[:,0,i]=1.0
+            x2=torch.clone(x)
+            x2[:,1,i]=1.0
+            x=torch.cat((x,x1,x2),dim=0)
+        assert(x.shape[0]==3**9)
+        shapev=x.view((3**9,2,3,3)).to(device)
+
+        assert(boardH==7 and boardW==7)
+
+        map_each_loc=[]
+        for loc in range(25):
+            locX=loc%5 + 1
+            locY=loc//5 + 1
+            locIdx=locX+locY*7
+            assert(locIdx>=8 and locIdx<=40)
+            locv=torch.zeros((1,49,3,3))
+            locv[:,locIdx-8,0,0]=1
+            locv[:,locIdx-7,0,1]=1
+            locv[:,locIdx-6,0,2]=1
+            locv[:,locIdx-1,1,0]=1
+            locv[:,locIdx,1,1]=1
+            locv[:,locIdx+1,1,2]=1
+            locv[:,locIdx+6,2,0]=1
+            locv[:,locIdx+7,2,1]=1
+            locv[:,locIdx+8,2,2]=1
+
+            locv=locv.to(device)
+            x=torch.cat((shapev,torch.repeat_interleave(locv,dim=0,repeats=shapev.shape[0])),dim=1)
+
+            with torch.no_grad():
+                y = self.conv1(x)
+                for block in self.mappingtrunk:
+                    y=block(y)
+                assert(y.shape[1]==self.midc)
+                assert(y.shape[2]==1)
+                assert(y.shape[3]==1)
+                y=y.view((-1,self.midc))
+                y=torch.einsum("nc,co->no",y,self.mappingFinalWeights[loc,:,:])
+                assert(y.shape[1]==self.c)
+                if (self.mapbound != 0):
+                    y = self.mapbound * torch.tanh(y / self.mapbound)
+
+            y=y.detach().cpu().numpy()
+            map_each_loc.append(y)
+
+        map=np.stack(map_each_loc)
+        assert(map.shape[0]==25)
+        assert(map.shape[1]==3**9)
+        assert(map.shape[2]==self.c)
+        return map
+
 class CNNLayer(nn.Module):
     def __init__(self, in_c, out_c):
         super().__init__()
@@ -1079,4 +2147,15 @@ ModelDic = {
     "vo6": Model_vo6,
     "vo7": Model_vo7,
     "vo8": Model_vo8,
+    "vo9t1": Model_vo9t1,
+    "vo10t1": Model_vo10t1,
+    "vo3t1": Model_vo3t1,
+    "vo3t2": Model_vo3t2,
+    "vo3t3": Model_vo3t3,
+    "vo3_int8": Model_vo3_int8,
+    "vo3t4": Model_vo3t4,
+    "vo3t5": Model_vo3t5,
+    "vo3a": Model_vo3a,
+    "vo3b": Model_vo3b,
+    "vov1": Model_vov1,
 }

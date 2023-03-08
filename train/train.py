@@ -40,6 +40,15 @@ def calculatePolicyLoss(output,pt):
 
     return cross_entropy_loss(output,pt)
 
+def calculateValueLoss(output,vt):
+    if(len(output.shape)==1 or output.shape[1]==1): #single value
+        if(len(output.shape)==1):
+            output=output.view((-1,1))
+        vt=torch.stack((vt[:,0]+0.5*vt[:,2],vt[:,1]+0.5*vt[:,2]),dim=1)
+        output=torch.stack((0.5*output[:,0],-0.5*output[:,0]),dim=1)
+
+    return cross_entropy_loss(output,vt)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -120,7 +129,8 @@ if __name__ == '__main__':
     if not os.path.exists(tensorboardpath):
         os.mkdir(tensorboardpath)
     train_writer=SummaryWriter(os.path.join(tensorboardpath,"train"))
-    val_writer=SummaryWriter(os.path.join(tensorboardpath,"val"))
+    if vdata_files:
+        val_writer=SummaryWriter(os.path.join(tensorboardpath,"val"))
 
     print("Building model..............................................................................................")
     modelpath=os.path.join(basepath,"model.pth")
@@ -210,7 +220,7 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             value, policy = model(board)
 
-            vloss = cross_entropy_loss(value, valueTarget)
+            vloss = calculateValueLoss(value, valueTarget)
             if(policy is None or policyTarget is None):
                 ploss = torch.zeros((1,)).to(device)
             else:
